@@ -1,0 +1,821 @@
+Листинг А.1. Исходный код файла GameManager.java
+
+package android.pingpong;
+
+import android.media.AudioManager;
+import android.media.SoundPool;
+import android.pingpong.objects.*;
+import android.content.Context;
+import android.content.res.Resources;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Rect;
+import android.graphics.Paint.Style;
+import android.util.Log;
+import android.view.SurfaceHolder;
+import java.util.Random;
+import android.media.MediaPlayer;
+
+
+public class GameManager extends Thread
+{
+    //размеры игрового поля
+    private  int FIELD_WIDTH = GlobalVars.screenWidth-100;
+    private  int FIELD_HEIGHT = GlobalVars.screenHeight-200;
+
+
+    // Область, на которой будем рисовать
+    private SurfaceHolder mSurfaceHolder;
+
+    //Состояние потока (выполняется или нет)
+    private boolean mRunning;
+    private int n=20;
+    private int randomN=0;
+
+    //Прямоугольник игрового поля
+    private Rect mField;
+    
+    //мяч
+    private Ball mBall;    
+    
+    // ракетка игрока
+    public Racquet mUs;
+    
+    //ракетка компьютера
+    public Racquet mThem;
+
+    //максимальный счёт
+    public static int MAX_score=100;
+
+    //фон
+    private Bitmap mBackground;
+
+    //Стили рисования
+    private Paint mPaint;
+    private Paint mScorePaint;
+
+    //генератор рандомных чисел
+    final Random random = new Random();
+
+    //строка результата победа\поражения
+    String message = "";
+
+
+
+    public GameManager(SurfaceHolder surfaceHolder, Context context)
+    {
+
+        mSurfaceHolder = surfaceHolder;
+        mRunning = false;
+
+
+        mPaint = new Paint();
+        mScorePaint = new Paint();
+        mPaint.setColor(Color.BLUE);
+        mPaint.setStrokeWidth(3);
+        mPaint.setStyle(Style.STROKE);
+
+        Resources res = context.getResources();
+
+        mField = new Rect();
+        mBall = new Ball(res.getDrawable(R.drawable.ball));
+        mUs = new Racquet(res.getDrawable(R.drawable.us));
+        mThem = new Racquet(res.getDrawable(R.drawable.them));
+    }
+
+    /**
+     * Задание состояния потока
+     * @param running
+     */
+
+    public void setRunning(boolean running)
+    {
+        mRunning = running;
+    }
+     // переменные для обработчика кнопку left, right, и задержки
+    int cl=0; int cr=0; int kost=0;
+
+    @Override
+    //Действия, выполняемые в потоке
+    public void run()
+    {
+        try
+        {
+            sleep(1000);
+        }
+        catch (InterruptedException iex)
+        {
+        }
+        while ((mRunning))
+        {
+            Canvas canvas = null;
+            try            {
+
+                canvas = mSurfaceHolder.lockCanvas();
+               synchronized (mSurfaceHolder)
+                {
+                    if (GlobalVars.left>cl){  //связь с обработчиком событий кнопки left
+                        cl=GlobalVars.left;
+                        movePlayerLeft();
+                    }
+                    if (GlobalVars.right>cr){ //и соотвествено right
+                        cr=GlobalVars.right;
+                        movePlayerRight();
+                    }
+                    updateObjects(); // обновление объектов
+                    refreshCanvas(canvas); /* Обновление объектов на экране */
+
+                    /* проверка на достижение максимального кол-ва очков*/
+                    mUs.setDirection(GameObject.DIR_NONE);
+                    sleep(20);
+                    if (mUs.getScore() >= MAX_score)
+                    {
+                        mScorePaint.setColor(Color.GREEN);
+                        mScorePaint.setTextSize(40);
+                        message = "You won";
+                        canvas.drawText(message, mField.centerX(), mField.centerY(), mScorePaint);
+                        sleep(500);
+                    }
+                    if (mThem.getScore() >= MAX_score)
+                    {
+                        mScorePaint.setColor(Color.RED);
+                        mScorePaint.setTextSize(40);
+                        message = "You lost";
+                        canvas.drawText(message, mField.centerX(), mField.centerY(), mScorePaint);
+                        sleep(500);
+                    }
+
+
+
+
+                }
+
+
+
+            }
+            catch (Exception e) { }
+            finally
+            {
+                if (canvas != null)
+                {
+                    mSurfaceHolder.unlockCanvasAndPost(canvas);
+                }
+            }
+        }
+    }
+
+    // Обновление объектов на экране
+    private void refreshCanvas(Canvas canvas)
+    {
+        // вывод фонового изображения
+        canvas.drawBitmap(mBackground, 0, 0, null);
+
+        // рисуем игровое поле
+        canvas.drawRect(mField, mPaint);
+
+        // рисуем игровые объекты
+        mBall.draw(canvas);
+        mUs.draw(canvas);
+        mThem.draw(canvas);
+
+        // вывод счета
+        mScorePaint.setTextSize(28);
+        mScorePaint.setColor(Color.RED);
+        canvas.drawText(String.valueOf(mThem.getScore()), mField.centerX(), mField.top - 10, mScorePaint);
+        mScorePaint.setColor(Color.BLUE);
+        canvas.drawText(String.valueOf(mUs.getScore()), mField.centerX(), mField.bottom + 25, mScorePaint);
+
+    }
+    private void reset()
+    {
+        // ставим мячик в центр
+        mBall.setCenterX(mField.centerX());
+        mBall.setCenterY(mField.centerY());
+        // задаем ему новый случайный угол
+        mBall.resetAngle();
+
+        // ставим ракетки в центр
+        mUs.setCenterX(mField.centerX());
+        mThem.setCenterX(mField.centerX());
+
+
+    }
+
+
+    /* обновляем объекты */
+    public void updateObjects()
+    {
+        mThem.update();
+        mBall.update();
+        mUs.update();
+        randomN=random.nextInt(n);
+        if (randomN==1||randomN<0) {
+            moveAI();
+            GlobalVars.touchroq=1;
+        }
+
+
+        // чтобы ракетки не выходили за пределы поля
+        placeInBounds(mUs);
+        placeInBounds(mThem);
+        
+        // столкновение со стенками
+        if (mBall.getLeft() <= mField.left)
+        {
+            mBall.setLeft(mField.left + Math.abs(mField.left - mBall.getLeft()));
+            mBall.reflectVertical();
+        }
+        else if (mBall.getRight() >= mField.right)
+        {
+            mBall.setRight(mField.right - Math.abs(mField.right - mBall.getRight()));
+            mBall.reflectVertical();
+        }
+
+       //столкновение с ракеткой игрока
+        if (GameObject.intersects(mBall, mUs))
+        {
+            GlobalVars.use1=1;
+
+            if (mBall.getBottom()>= mUs.getTop()) {
+                mBall.setBottom(-5 - mBall.getSpeed() + mUs.getBottom() - Math.abs(mUs.getBottom() - mBall.getBottom()));
+                               mBall.reflectHorizontal();
+            }
+        }
+        else if (GameObject.intersects(mBall, mThem)) //компьютера
+        {
+            GlobalVars.use1=1;
+            mBall.setTop(5 + mBall.getSpeed()+ mThem.getTop() + Math.abs(mThem.getTop() - mBall.getTop()));
+            mBall.reflectHorizontal();
+            GlobalVars.touchroq=0;
+        }
+
+
+        //если прошел ракету компьютера
+        if (mBall.getBottom() < mThem.getBottom())
+        {
+            mBall.setSpeed(mBall.getSpeed()+2);  //скорость+
+            n=n-2; //усложнение компьютера
+            mUs.incScore(); ///++
+            reset();
+        }
+
+        if (mBall.getTop() > mUs.getTop())
+        {
+            mThem.incScore();
+            if(mBall.getSpeed()>10) {
+                mBall.setSpeed(mBall.getSpeed() - 2); //скорость--
+                n = n + 1;
+            }
+            reset();
+        }
+
+    }
+    
+    // передвижение ракетки компьютера
+    public void moveAI()
+    {
+        if (mThem.getLeft() > mBall.getRight())
+        {
+                mThem.setDirection(GameObject.DIR_LEFT);
+        }
+
+        else if (mThem.getRight() < mBall.getLeft())
+        {
+            mThem.setDirection(GameObject.DIR_RIGHT);
+        }
+
+        mThem.update();
+    }
+
+    //передвижение игрока вправо
+    public void movePlayerRight()
+    {
+        mUs.setDirection(GameObject.DIR_RIGHT);
+        mUs.update();
+    }
+
+    //передвижение игрока влево
+    public void movePlayerLeft()
+    {
+        mUs.setDirection(GameObject.DIR_LEFT);
+        mUs.update();
+    }
+
+
+    /**
+     * Инициализация положения объектов, в соответствии с размерами экрана
+     * @param screenHeight Высота экрана
+     * @param screenWidth Ширина экрана
+     */
+
+    public void initPositions(int screenHeight, int screenWidth)
+    {
+        int left = (screenWidth - FIELD_WIDTH) / 2;
+        int top = (screenHeight - FIELD_HEIGHT) / 2;
+        
+        mField.set(left, top, left + FIELD_WIDTH, top + FIELD_HEIGHT);
+        
+        mBackground = Bitmap.createBitmap(screenWidth, screenHeight, Bitmap.Config.RGB_565);
+
+        // мячик ставится в центр поля
+        mBall.setCenterX(mField.centerX());
+        mBall.setCenterY(mField.centerY());
+
+        // ракетка игрока - снизу по центру
+        mUs.setCenterX(mField.centerX());
+        mUs.setBottom(mField.bottom);
+
+        // ракетка компьютера - сверху по центру
+        mThem.setCenterX(mField.centerX());
+        mThem.setTop(mField.top);
+    }
+    
+//запрет выходить за рамки экрана
+    private void placeInBounds(Racquet r)
+    {
+        if (r.getLeft() < mField.left)
+            r.setLeft(mField.left);
+        else if (r.getRight() > mField.right)
+            r.setRight(mField.right);
+    }
+
+Листинг А.2. Исходный код файла GameScreen.java
+
+package android.pingpong;
+
+import android.app.Activity;
+import android.content.Context;
+import android.media.MediaPlayer;
+import android.os.Bundle;
+import android.view.View;
+import android.widget.Button;
+import android.util.DisplayMetrics;
+import android.content.pm.ActivityInfo;
+import android.media.AudioManager;
+import android.media.SoundPool;
+
+
+
+public class GameScreen extends Activity {
+    private MediaPlayer mediaPlayer;
+
+
+
+    /** Called when the activity is first created. */
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE); //запрещаем поворот
+
+        //находим размер экрана
+        DisplayMetrics displaymetrics = new DisplayMetrics();
+        getWindowManager().getDefaultDisplay().getMetrics(displaymetrics);
+        GlobalVars.screenWidth = displaymetrics.widthPixels;
+        GlobalVars.screenHeight = displaymetrics.heightPixels; //находим размер экрана
+		
+		setContentView(R.layout.activity_game_screen);   
+
+
+
+        //обработчик событий кнопок
+        Button btn1;
+        Button btn2;
+        //mediaPlayer.start();
+        btn1 = (Button) findViewById(R.id.button1);
+        View.OnClickListener oclBtn1 = new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                // TODO Auto-generated method stub
+                GlobalVars.right = GlobalVars.right + 1;
+
+
+
+            }
+        };
+        btn1.setOnClickListener(oclBtn1);
+
+        //тут будет вторая кнопка
+        btn2 = (Button) findViewById(R.id.button2);
+        View.OnClickListener oclBtn2 = new View.OnClickListener() {
+            @Override
+            public void onClick(View v2) {
+                // TODO Auto-generated method stub
+                GlobalVars.left = GlobalVars.left + 1;
+                
+
+
+            }
+        };
+        btn2.setOnClickListener(oclBtn2);
+
+
+    }
+
+}
+
+
+Листинг А.3. Исходный код файла GameView.java
+
+
+package android.pingpong;
+
+import android.content.Context;
+import android.util.AttributeSet;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
+
+public class GameView extends SurfaceView implements SurfaceHolder.Callback
+{
+    //Область рисования
+    private SurfaceHolder mSurfaceHolder;
+    
+    //Поток, рисующий в области
+    public GameManager mGameManager;
+    
+
+     /**
+     * Конструктор
+     * @param context
+     * @param attrs
+     */
+    public GameView(Context context, AttributeSet attrs)
+    {
+        super(context, attrs);
+
+        // подписываемся на события Surface
+        mSurfaceHolder = getHolder();
+        mSurfaceHolder.addCallback(this);
+
+        // Создание менеджера игровых объектов
+        mGameManager = new GameManager(mSurfaceHolder, context);
+
+        // Разрешаем форме обрабатывать события
+        setFocusable(true);
+    }
+
+    @Override
+    //Изменение области рисования
+    public void surfaceChanged(SurfaceHolder holder, int format, int width, int height)
+    {
+        mGameManager.initPositions(height, width);
+    }
+
+    @Override
+    //Создание области рисования
+    public void surfaceCreated(SurfaceHolder holder)
+    {
+        mGameManager.setRunning(true);
+        mGameManager.start();
+    }
+
+    @Override
+    //Уничтожение области рисования
+    public void surfaceDestroyed(SurfaceHolder holder)
+    {
+        boolean retry = true;
+        mGameManager.setRunning(false);
+        while (retry) 
+        {
+            try 
+            {
+
+                mGameManager.join(); 
+                retry = false;
+            } 
+            catch (InterruptedException e) { }
+        }
+    }
+
+
+}
+
+Листинг А.4. Исходный код файла GlobalVars.java
+
+
+package android.pingpong;
+
+public class GlobalVars
+{
+    public static int left = 0;
+    public static int right = 0;
+    public static int screenWidth = 110;
+    public static int screenHeight = 110;
+    public static int touchroq=0;
+    public static int use1;
+    public static int use2;
+
+}
+
+Листинг А.5. Исходный код файла StartScreen.java
+
+package android.pingpong;
+
+import android.app.Activity;
+import android.content.Intent;
+import android.os.Bundle;
+import android.view.View;
+import android.widget.Button;
+
+public class StartScreen extends Activity implements View.OnClickListener
+{
+    @Override
+    public void onCreate(Bundle savedInstanceState)
+    {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.start);
+
+        // Кнопка "Start"
+        Button startButton = (Button)findViewById(R.id.StartButton);
+        startButton.setOnClickListener(this);
+
+        // Кнопка "Exit"
+        Button exitButton = (Button)findViewById(R.id.ExitButton);
+        exitButton.setOnClickListener(this);
+
+
+    }
+
+    //Обработка нажатия кнопок
+    public void onClick(View v)
+    {
+        switch (v.getId())
+        {
+            case R.id.StartButton:
+            {
+                Intent intent = new Intent();
+                intent.setClass(this, GameScreen.class);
+                startActivity(intent);
+                break;
+            }
+
+            case R.id.ExitButton:
+                finish();
+                break;
+
+            default:
+                break;
+        }
+    }
+}
+
+
+
+
+
+Листинг А.5. Исходный код файла Objects\Ball.java
+
+package android.pingpong.objects;
+
+import java.util.Random;
+import android.graphics.drawable.Drawable;
+
+public class Ball extends GameObject
+{
+    public int DEFAULT_SPEED = 5; //начальная скорость
+    private static final int PI = 180;
+
+    //угол, который составл¤ет направление полета шарика с осью Ox
+    private int mAngle;
+
+    //см android.pingpong.objects.GameObject#GameObject(Drawable)
+
+
+    public void setSpeed(int Speed){
+        mSpeed=Speed;
+    }
+    public int getSpeed()
+    {
+        return mSpeed;
+    }
+
+    public Ball(Drawable image)
+    {
+        super(image);
+        mSpeed = DEFAULT_SPEED; //скорость шара
+        mAngle = getRandomAngle(); // угол полета
+    }
+
+    // см android.pingpong.objects.GameObject#updatePoint()
+    @Override
+    protected void updatePoint()
+    {
+        double angle = Math.toRadians(mAngle);
+
+        mPoint.x += (int)Math.round(mSpeed * Math.cos(angle));
+        mPoint.y -= (int)Math.round(mSpeed * Math.sin(angle));
+    }
+    public void resetAngle()
+    {
+        mAngle = getRandomAngle();
+    }
+    public int angle2;
+    //генерирование случайного угла полета в начале
+    private int getRandomAngle()
+    {
+        Random rnd = new Random(System.currentTimeMillis());
+        angle2=45+rnd.nextInt(270);
+        if ((angle2==90)||(angle2==180)||(angle2==270)||(angle2==360))  angle2=angle2-20;
+        return (angle2);
+    }
+    
+    //отражение от стенок
+    public void reflectVertical()
+    {
+        if (mAngle > 0 && mAngle < PI)
+            mAngle = PI - mAngle;
+        else
+            mAngle = 3 * PI - mAngle;
+    }
+    
+    //отражение от ракеток
+    public void reflectHorizontal()
+    {
+        mAngle = 2 * PI - mAngle;
+    }
+}
+
+
+Листинг А.7. Исходный код файла Objects\GameObject.java
+
+package android.pingpong.objects;
+
+import android.graphics.Canvas;
+import android.graphics.Point;
+import android.graphics.Rect;
+import android.graphics.drawable.Drawable;
+
+
+public abstract class GameObject
+{
+    // Константы для направлений
+    public static final int DIR_LEFT = -5;
+    public static final int DIR_RIGHT = 5;
+    public static final int DIR_NONE = 0;
+
+    /** Координаты опорной точки */
+    protected Point mPoint;
+
+    /** Высота изображения */
+    protected int mHeight;
+
+    /** Ширина изображения */
+    protected int mWidth;
+
+    /** Изображение */
+    private Drawable mImage;
+
+    /** Скорость */
+    public int mSpeed;
+
+    /**
+     * Конструктор
+     * @param image Изображение, которое будет обозначать данный объект
+     */
+    public GameObject(Drawable image)
+    {
+        mImage = image;
+        mPoint = new Point(0, 0);
+        mWidth = image.getIntrinsicWidth();
+        mHeight = image.getIntrinsicHeight();
+    }
+
+    /** Перемещение опорной точки */
+    protected abstract void updatePoint();
+
+    /** Перемещение объекта */
+    public void update()
+    {
+        updatePoint();
+        mImage.setBounds(mPoint.x, mPoint.y, mPoint.x + mWidth, mPoint.y + mHeight);
+    }
+
+    /** Отрисовка объекта */
+    public void draw(Canvas canvas)
+    {
+        mImage.draw(canvas);
+    }
+
+    /** Задает левую границу объекта */
+    public void setLeft(int value)
+    {
+        mPoint.x = value;
+    }
+
+    /** Задает правую границу объекта */
+    public void setRight(int value)
+    {
+        mPoint.x = value - mWidth;
+    }
+
+    /** Задает верхнюю границу объекта */
+    public void setTop(int value)
+    {
+        mPoint.y = value;
+    }
+
+    /** Задает нижнюю границу объекта */
+    public void setBottom(int value)
+    {
+        mPoint.y = value - mHeight;
+    }
+
+    /** Задает абсциссу центра объекта */
+    public void setCenterX(int value)
+    {
+        mPoint.x = value - mWidth / 2;
+    }
+
+    /** Задает левую ординату центра объекта */
+    public void setCenterY(int value)
+    {
+        mPoint.y = value - mHeight / 2;
+    }
+
+    /** Верхняя граница объекта */
+    public int getTop() { return mPoint.y; }
+
+    /** Нижняя граница объекта */
+    public int getBottom() { return mPoint.y + mHeight; }
+
+    /** Левая граница объекта */
+    public int getLeft() { return mPoint.x; }
+
+    /** Правая граница объекта */
+    public int getRight() { return mPoint.x + mWidth; }
+
+    /** Центральная точка объекта */
+    public Point getCenter() { return new Point(mPoint.x + mWidth / 2, mPoint.y + mHeight / 2); }
+
+    /** Высота объекта */
+    public int getHeight() { return mHeight; }
+
+    /** Ширина объекта */
+    public int getWidth() { return mWidth; }
+
+    /** @return Прямоугольник, ограничивающий объект */
+    public Rect getRect() { return mImage.getBounds(); }
+
+    /** Проверяет, пересекаются ли два игровых объекта */
+    public static boolean intersects(GameObject obj1, GameObject obj2)
+    {
+        return Rect.intersects(obj1.getRect(), obj2.getRect());
+    }
+}
+
+
+
+Листинг А.8. Исходный код файла Objects\ Racquet.java
+package android.pingpong.objects;
+
+import android.graphics.drawable.Drawable;
+
+public class Racquet extends GameObject
+{
+    private static final int DEFAULT_SPEED = 7;
+
+    /** счёт */
+    private int mScore;
+    
+    /** направление */
+    private int mDirection;
+    
+   // задать направление движение
+    public void setDirection(int direction)
+    {
+        mDirection = direction;
+    }
+
+    /** 
+     * @see android.pingpong.objects.GameObject#GameObject(Drawable)
+     */
+    public Racquet(Drawable image)
+    {
+        super(image);
+        
+        mDirection = DIR_NONE; //направление ракетки == 0
+        mScore = 0; // счёт
+        mSpeed = DEFAULT_SPEED; //  скорость ракетки
+    }
+
+    public void incScore()
+    {
+        mScore++;
+    }
+    public int getScore()
+    {
+        return mScore;
+    }
+
+    //см android.pingpong.objects.GameObject#updatePoint()
+    @Override
+    protected void updatePoint()
+    {
+        mPoint.x += mDirection * mSpeed; //  двигаем ракетку по оси Ox в соответствующую сторону
+    }
+}
+
+
+
